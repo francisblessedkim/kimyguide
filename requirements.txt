@@ -1,0 +1,8 @@
+pandas>=1.5
+scikit-learn>=1.2
+numpy>=1.24
+
+# Optional (developer/test) extras you can `pip install` if needed:
+# jupyter
+# black
+# flake8
