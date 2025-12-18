@@ -1,0 +1,6 @@
+goal,topic_proxy,precision@5_tfidf,recall@5_tfidf,precision@5_random,recall@5_random
+I want to learn SQL joins and window functions,SQL,1.0,0.625,0.0,0.0
+I want to learn deep learning and neural networks,Deep Learning,1.0,0.263,0.4,0.105
+I want to learn recommender systems and cold start,Recommender Systems,1.0,0.833,0.0,0.0
+I want to learn NLP embeddings and transformers,Natural Language Processing,1.0,0.417,0.6,0.25
+I want to learn time series forecasting and anomaly detection,Time Series,1.0,0.333,0.0,0.0
