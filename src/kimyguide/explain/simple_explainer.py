@@ -91,3 +91,35 @@ def add_explanations(recs: pd.DataFrame) -> pd.DataFrame:
 
     recs["explanation"] = explanations
     return recs
+
+class SimpleExplainer:
+    """
+    Small wrapper class used by the FastAPI layer.
+
+    Keeps the existing function-based implementation (extract_keywords,
+    add_explanations) but provides a single `explain()` method that
+    returns:
+      - why (str)
+      - matched_terms (List[str])
+    """
+
+    def explain(self, goal: str, title: str = "", description: str = "", tags: str = ""):
+        goal_keywords = extract_keywords(goal, max_words=6)
+
+        item_text = f"{title} {description} {tags}"
+        item_keywords = extract_keywords(item_text, max_words=10)
+
+        matched = [kw for kw in goal_keywords if kw in item_keywords]
+
+        if matched:
+            because = ", ".join(matched[:6])
+            why = (
+                f"Recommended because your goal mentions {because}, "
+                "and this course directly covers those topics."
+            )
+        else:
+            why = (
+                "Recommended because it is related to your learning goal based on content similarity."
+            )
+
+        return why, matched
