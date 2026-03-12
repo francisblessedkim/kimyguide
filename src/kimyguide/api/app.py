@@ -24,6 +24,10 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+
+# Local application imports: pydantic schemas, explainability helpers and
+# the three recommender implementations used by this API.
 from kimyguide.api.schemas import Evidence, RecommendRequest, RecommendResponse, RecommendationItem
 from kimyguide.explain.simple_explainer import SimpleExplainer
 from kimyguide.models.embedding_recommender import EmbeddingConfig, EmbeddingRecommender
@@ -69,38 +73,59 @@ REQUIRED_COLUMNS = {"course_id", "title", "description", "tags", "text"}
 
 
 def _load_courses(path: Path) -> pd.DataFrame:
+    """Load a CSV of course metadata and prepare required columns.
+
+    The function validates the presence of expected columns, coerces
+    them to strings, removes rows with empty `text`, and standardises
+    the id column type. It raises FileNotFoundError or KeyError on
+    missing inputs so callers fail fast during startup.
+    """
     if not path.exists():
         raise FileNotFoundError(f"Dataset not found at: {path}")
 
+    # Read CSV and validate required columns
     df = pd.read_csv(path)
 
     missing = REQUIRED_COLUMNS - set(df.columns)
     if missing:
         raise ValueError(f"Dataset is missing required columns: {sorted(missing)}")
 
+    # Ensure expected columns exist and are strings
     for col in ["course_id", "title", "description", "tags", "text"]:
         df[col] = df[col].fillna("").astype(str)
 
+    # Standardise id type and drop items with empty text
     df["course_id"] = df["course_id"].astype(str)
     df = df[df["text"].str.strip() != ""].reset_index(drop=True)
     return df
 
 
 # --- Initialize models ---
+#
+# At module import / startup I try to load the dataset and instantiate
+# the TF-IDF baseline and (optionally) the embedding + hybrid models.
+# Tests and lightweight runs can disable embeddings via the
+# KIMYGUIDE_SKIP_EMBEDDINGS environment variable to avoid heavy model loads.
+# The variables below are module-level and may remain None if initialization
+# fails or embeddings are intentionally skipped.
 courses_df: Optional[pd.DataFrame] = None
 tfidf_model: Optional[TfidfGoalRecommender] = None
 embed_model: Optional[EmbeddingRecommender] = None
 hybrid_model: Optional[HybridRecommender] = None
 
+# Simple, rule-based explainability helper used to extract matched terms
+# and produce the human-readable `why` explanation attached to recommendations.
 explainer = SimpleExplainer()
 
 try:
     courses_df = _load_courses(DATA_PATH)
 
-    # TF-IDF baseline
+    # TF-IDF baseline (lightweight and always available)
     tfidf_model = TfidfGoalRecommender(courses_df)
 
-    # Optionally skip embeddings (useful for tests / fast runs)
+    # Optionally skip embeddings (useful for tests / CI / fast local runs).
+    # When disabled we leave embed_model and hybrid_model as None and
+    # the API will respond with 503 for embedding/hybrid requests.
     skip_embeddings = os.getenv("KIMYGUIDE_SKIP_EMBEDDINGS", "0").strip() == "1"
     if skip_embeddings:
         print("[INFO] KIMYGUIDE_SKIP_EMBEDDINGS=1 -> embeddings + hybrid disabled")
@@ -131,19 +156,23 @@ except Exception as e:
     print(f"[ERROR] Failed to initialize models: {e}")
 
 
-@app.get("/")
+# @app.get("/")
+# def root():
+#     return {
+#         "name": "KimyGuide API",
+#         "docs": "/docs",
+#         "health": "/health",
+#         "ui": "/ui",
+#         "compare": "/ui/compare",
+#         "eval": "/ui/eval",
+#         "dataset": "/ui/dataset",
+#         "model_version": MODEL_VERSION,
+#         "dataset_path": str(DATA_PATH),
+#     }
+
+@app.get("/", include_in_schema=False)
 def root():
-    return {
-        "name": "KimyGuide API",
-        "docs": "/docs",
-        "health": "/health",
-        "ui": "/ui",
-        "compare": "/ui/compare",
-        "eval": "/ui/eval",
-        "dataset": "/ui/dataset",
-        "model_version": MODEL_VERSION,
-        "dataset_path": str(DATA_PATH),
-    }
+    return RedirectResponse(url="/ui", status_code=307)
 
 
 @app.get("/health")
@@ -169,11 +198,17 @@ def health() -> Dict[str, Any]:
 # ============================================================
 
 def _dcg(rels: List[int]) -> float:
+    """Compute discounted cumulative gain for a list of relevance labels.
+
+    rels should be a list of integers (0/1 for binary relevance). The
+    standard DCG formula discounts by log2(rank+1) where rank starts at 1.
+    """
     # rels: list of 0/1 relevance
     return sum((rel / math.log2(i + 2)) for i, rel in enumerate(rels))
 
 
 def _ndcg_at_k(rels: List[int], k: int) -> float:
+    """Normalized DCG at cutoff k."""
     rels = rels[:k]
     dcg = _dcg(rels)
     ideal = sorted(rels, reverse=True)
@@ -440,6 +475,19 @@ def _candidate_pool_size(req: RecommendRequest, model: str, total: int) -> int:
         return min(int(getattr(req, "top_n_candidates", 200)), total)
     return total
 
+@app.get("/api/info")
+def api_info():
+    return {
+        "name": "KimyGuide API",
+        "docs": "/docs",
+        "health": "/health",
+        "ui": "/ui",
+        "compare": "/ui/compare",
+        "eval": "/ui/eval",
+        "dataset": "/ui/dataset",
+        "model_version": MODEL_VERSION,
+        "dataset_path": str(DATA_PATH),
+    }
 
 @app.post("/recommend", response_model=RecommendResponse)
 def recommend(req: RecommendRequest) -> RecommendResponse:
@@ -453,7 +501,9 @@ def recommend(req: RecommendRequest) -> RecommendResponse:
     model = req.model
     k = int(req.k)
 
-    # Model gating if embeddings disabled
+    # Model gating if embeddings disabled: return a 503 Service Unavailable
+    # when the caller requests embeddings/hybrid but the server was started
+    # with embeddings disabled (e.g. in tests or lightweight runs).
     if model in ("embedding", "hybrid"):
         if embed_model is None or hybrid_model is None:
             raise HTTPException(
@@ -496,15 +546,22 @@ def recommend(req: RecommendRequest) -> RecommendResponse:
         if model in ("embedding", "hybrid") and hybrid_model is not None:
             low_confidence = confidence < float(hybrid_model.cfg.confidence_threshold)
 
+    # Build the list of RecommendationItem objects to return. For each
+    # candidate we compute a concise human-readable explanation (via the
+    # SimpleExplainer), attach evidence (matched terms, scores, pool size)
+    # and include lightweight metadata useful for display in the UI.
     items: List[RecommendationItem] = []
     for _, row in recs.iterrows():
         title = str(row.get("title", ""))
         description = str(row.get("description", ""))
         tags = str(row.get("tags", ""))
 
+        # Extract a short natural-language explanation and the matched terms
+        # (e.g. overlapping tokens across title/description/tags).
         why, matched_terms = explainer.explain(goal=goal, title=title, description=description, tags=tags)
 
         if low_confidence:
+            # Override the why-text for low-confidence hybrid/embedding cases
             why = (
                 "No strong matches were found for this goal in the current dataset. "
                 "Showing the closest available courses based on semantic similarity."
@@ -532,6 +589,8 @@ def recommend(req: RecommendRequest) -> RecommendResponse:
         if confidence is not None:
             metadata["confidence"] = float(confidence)
 
+        # Append the constructed RecommendationItem dataclass which will be
+        # serialized by FastAPI according to the RecommendResponse schema.
         items.append(
             RecommendationItem(
                 course_id=str(row.get("course_id", "")),
