@@ -2,25 +2,26 @@
 Hybrid recommender for KimyGuide (general cold-start).
 
 Goal:
-Solve cold-start by recommending from the *first interaction* using:
+Solve cold-start by recommending from the first interaction using:
   - semantic embeddings (SentenceTransformer)
   - lexical signal (TF-IDF cosine)
-  - lightweight metadata prior (e.g., "data" goals favor computing/statistics)
+  - lightweight metadata prior
+  - level-aware reranking (beginner/intermediate/advanced intent)
 
 The hybrid score is:
 
-  final = w_emb * emb_score + w_tfidf * tfidf_score + w_meta * meta_prior
+  final = w_emb * emb_score + w_tfidf * tfidf_score + w_meta * meta_prior + level_adjustment
 
 Confidence:
 We expose a simple confidence measure based on the semantic strength of the
 best match (emb_score top-1). This helps UX: if confidence is low, we can show
-a fallback message.
+a fallback message or no-results state.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, Dict, List
+from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -33,6 +34,10 @@ class HybridConfig:
     w_tfidf: float = 0.20
     w_meta: float = 0.05
     confidence_threshold: float = 0.45
+    no_match_threshold: float = 0.40
+    beginner_level_boost: float = 0.12
+    intermediate_penalty: float = -0.04
+    advanced_penalty: float = -0.10
 
 
 def _safe_str(x) -> str:
@@ -58,13 +63,6 @@ class HybridRecommender:
         cfg: Optional[HybridConfig] = None,
         text_col: str = "text",
     ):
-        """
-        Parameters
-        ----------
-        items: DataFrame containing course rows
-        embedder: EmbeddingRecommender instance (must implement score_all)
-        tfidf: TfidfGoalRecommender instance
-        """
         if cfg is None:
             cfg = HybridConfig()
 
@@ -77,51 +75,107 @@ class HybridRecommender:
         self.tfidf = tfidf
         self.text_col = text_col
 
-        # Precompute a TF-IDF similarity helper:
-        # We can reuse tfidf.vectorizer and item_matrix from TfidfGoalRecommender
         self._vectorizer = getattr(self.tfidf, "vectorizer", None)
         self._item_matrix = getattr(self.tfidf, "item_matrix", None)
 
         if self._vectorizer is None or self._item_matrix is None:
             raise ValueError("TF-IDF model is missing vectorizer/item_matrix (unexpected).")
 
+    def _is_beginner_goal(self, goal: str) -> bool:
+        g = goal.lower().strip()
+
+        beginner_phrases = [
+            "learn",
+            "start learning",
+            "beginner",
+            "beginners",
+            "basic",
+            "basics",
+            "intro",
+            "introduction",
+            "getting started",
+            "get started",
+            "new to",
+            "first time",
+            "foundation",
+            "foundations",
+        ]
+
+        advanced_phrases = [
+            "advanced",
+            "intermediate",
+            "expert",
+            "specialized",
+            "specialised",
+            "deeper",
+            "deep dive",
+            "master",
+        ]
+
+        has_beginner = any(p in g for p in beginner_phrases)
+        has_advanced = any(p in g for p in advanced_phrases)
+
+        return has_beginner and not has_advanced
+
+    def _level_adjustment(self, goal: str, row: pd.Series) -> float:
+        level = _safe_str(row.get("level", "")).lower().strip()
+
+        if not self._is_beginner_goal(goal):
+            return 0.0
+
+        if "intro" in level or "beginner" in level:
+            return self.cfg.beginner_level_boost
+        if "intermediate" in level:
+            return self.cfg.intermediate_penalty
+        if "advanced" in level:
+            return self.cfg.advanced_penalty
+        return 0.0
+
     def _meta_prior(self, goal: str, row: pd.Series) -> float:
-        """
-        Lightweight bias to improve general cold-start.
-        Not meant to dominate ranking — just a small tie-breaker.
-        """
         g = goal.lower()
         subject = _safe_str(row.get("subject", "")).lower()
         title = _safe_str(row.get("title", "")).lower()
+        tags = _safe_str(row.get("tags", "")).lower()
+        text = _safe_str(row.get("text", "")).lower()
 
-        # detect goal "domain"
-        is_data_goal = any(k in g for k in ["data science", "data", "statistics", "machine learning", "ml", "python"])
-        is_ai_goal = any(k in g for k in ["deep learning", "neural", "ai", "artificial intelligence"])
-        is_lang_goal = any(k in g for k in ["german", "french", "spanish", "language", "travel"])
+        is_data_goal = any(
+            k in g for k in [
+                "data science", "data", "statistics", "machine learning", "ml", "python"
+            ]
+        )
+        is_ai_goal = any(
+            k in g for k in [
+                "deep learning", "neural", "ai", "artificial intelligence"
+            ]
+        )
+        is_lang_goal = any(
+            k in g for k in [
+                "german", "french", "spanish", "italian", "chinese",
+                "language", "languages", "travel"
+            ]
+        )
 
         prior = 0.0
+        searchable = f"{subject} {title} {tags} {text}"
 
         if is_data_goal:
-            if any(k in subject for k in ["digital computing", "science maths technology"]) or "data" in title:
-                prior += 1.0
-        if is_ai_goal:
-            if any(k in subject for k in ["digital computing", "science maths technology"]) or any(k in title for k in ["machine", "data", "comput"]):
-                prior += 1.0
-        if is_lang_goal:
-            if "languages" in subject or "german" in title or "language" in title:
+            if any(k in searchable for k in ["digital computing", "data", "statistics", "python", "machine learning"]):
                 prior += 1.0
 
-        # cap to [0, 1]
+        if is_ai_goal:
+            if any(k in searchable for k in ["artificial intelligence", "ai", "machine learning", "neural", "data", "comput"]):
+                prior += 1.0
+
+        if is_lang_goal:
+            if any(k in searchable for k in ["languages", "language", "french", "german", "spanish", "italian", "chinese"]):
+                prior += 1.0
+
         return float(min(1.0, prior))
 
     def _tfidf_scores(self, goal_text: str) -> np.ndarray:
-        # cosine similarity between goal vec and all items (same logic as tfidf recommender)
-        goal_vec = self._vectorizer.transform([goal_text])
-        # item_matrix likely sparse; dot product via sklearn cosine is ok,
-        # but we can approximate with cosine_similarity if available.
-        # We'll do safe import to avoid extra dependency changes.
         from sklearn.metrics.pairwise import cosine_similarity
 
+        goal_vec = self._vectorizer.transform([goal_text])
         sims = cosine_similarity(goal_vec, self._item_matrix)[0]
         return sims.astype(np.float32)
 
@@ -132,42 +186,45 @@ class HybridRecommender:
         n_items = len(self.items)
         top_n = min(int(self.cfg.top_n_candidates), n_items)
 
-        # 1) Semantic retrieval over all items, take top-N candidates
         emb_sims = self.embedder.score_all(goal_text).astype(np.float32)
         cand_idx = np.argsort(emb_sims)[::-1][:top_n]
 
         cand = self.items.iloc[cand_idx].copy()
         cand_emb = emb_sims[cand_idx]
 
-        # 2) Lexical score (TF-IDF) over all, then slice to candidates
         tfidf_all = self._tfidf_scores(goal_text)
         cand_tfidf = tfidf_all[cand_idx]
 
-        # 3) Metadata prior (cheap, explainable)
-        meta = np.array([self._meta_prior(goal_text, row) for _, row in cand.iterrows()], dtype=np.float32)
+        meta = np.array(
+            [self._meta_prior(goal_text, row) for _, row in cand.iterrows()],
+            dtype=np.float32
+        )
 
-        # Normalize component scores to [0,1] within the candidate set (stabilizes weighting)
+        level_adj = np.array(
+            [self._level_adjustment(goal_text, row) for _, row in cand.iterrows()],
+            dtype=np.float32
+        )
+
         emb_01 = _normalize_01(cand_emb)
         tfidf_01 = _normalize_01(cand_tfidf)
-        meta_01 = meta  # already in [0,1]
+        meta_01 = meta
 
         final = (
             self.cfg.w_emb * emb_01
             + self.cfg.w_tfidf * tfidf_01
             + self.cfg.w_meta * meta_01
+            + level_adj
         ).astype(np.float32)
 
-        # Confidence: semantic strength of the best match (raw cosine, not normalized)
         confidence = float(cand_emb[0]) if len(cand_emb) else 0.0
 
-        # Build output
         cand["embedding_score"] = cand_emb
         cand["tfidf_score"] = cand_tfidf
         cand["meta_prior"] = meta_01
+        cand["level_adjustment"] = level_adj
         cand["score"] = final
         cand["goal"] = goal_text
         cand["confidence"] = confidence
 
-        # Rank by final hybrid score
         cand = cand.sort_values("score", ascending=False).head(top_k).reset_index(drop=True)
         return cand

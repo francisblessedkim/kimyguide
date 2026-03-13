@@ -5,67 +5,147 @@
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>KimyGuide • Dataset</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      @keyframes fadeUp {
+        from { opacity: 0; transform: translateY(18px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+
+      .fade-up { animation: fadeUp .7s ease-out both; }
+
+      .glass {
+        background: rgba(255,255,255,0.84);
+        backdrop-filter: blur(16px);
+      }
+
+      .bg-grid {
+        background:
+          radial-gradient(circle at top left, rgba(59,130,246,0.12), transparent 28%),
+          radial-gradient(circle at top right, rgba(99,102,241,0.08), transparent 24%),
+          linear-gradient(180deg, #f8fbff 0%, #ffffff 100%);
+      }
+    </style>
   </head>
 
-  <body class="bg-white text-slate-900">
-    <div class="max-w-6xl mx-auto px-4 py-10">
-      <!-- Header -->
-      <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-        <div>
-          <h1 class="text-2xl font-semibold tracking-tight">Dataset</h1>
-          <p class="text-slate-600 text-sm">
-            OpenLearn curated dataset • <span class="text-slate-900">{{ model_version }}</span>
-          </p>
-        </div>
-        <div class="flex flex-wrap gap-2">
-          <a class="px-4 py-2 rounded-full text-sm border border-slate-200 hover:bg-slate-50" href="/ui">Recommend</a>
-          <a class="px-4 py-2 rounded-full text-sm border border-slate-200 hover:bg-slate-50" href="/ui/compare">Compare</a>
-          <a class="px-4 py-2 rounded-full text-sm border border-slate-200 hover:bg-slate-50" href="/ui/eval">Evaluate</a>
-          <a class="px-4 py-2 rounded-full text-sm border border-slate-200 bg-blue-50 text-blue-800" href="/ui/dataset">Dataset</a>
+  <body class="min-h-screen bg-grid text-slate-900">
+    <div class="max-w-7xl mx-auto px-4 py-8 md:py-10">
+      <div class="glass border border-white/60 shadow-[0_20px_60px_rgba(15,23,42,0.08)] rounded-[2rem] p-5 md:p-7 fade-up">
+        <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
+          <div class="flex-1 min-w-0">
+            <div class="inline-flex items-center gap-3">
+              <div class="w-12 h-12 rounded-2xl bg-blue-600 text-white flex items-center justify-center font-bold text-lg shadow-lg shadow-blue-200 shrink-0">
+                K
+              </div>
+              <div class="min-w-0">
+                <h1 class="text-3xl font-semibold tracking-tight">Dataset Explorer</h1>
+                <p class="text-slate-600 text-sm">
+                  OpenLearn curated data used by KimyGuide for recommendation experiments
+                </p>
+              </div>
+            </div>
+
+            <div class="mt-4 inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-50 border border-slate-200 text-xs text-slate-600">
+              <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+              <span>{{ model_version }}</span>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 lg:flex lg:flex-nowrap lg:justify-end">
+            <a
+              class="min-w-[120px] text-center px-4 py-2.5 rounded-full text-sm border border-slate-200 hover:bg-white transition"
+              href="/ui"
+            >
+              Recommend
+            </a>
+            <a
+              class="min-w-[120px] text-center px-4 py-2.5 rounded-full text-sm border border-slate-200 hover:bg-white transition"
+              href="/ui/compare"
+            >
+              Compare
+            </a>
+            <a
+              class="min-w-[120px] text-center px-4 py-2.5 rounded-full text-sm border border-slate-200 hover:bg-white transition"
+              href="/ui/eval"
+            >
+              Evaluate
+            </a>
+            <a
+              class="min-w-[120px] text-center px-4 py-2.5 rounded-full text-sm border border-blue-200 bg-blue-50 text-blue-800 shadow-sm"
+              href="/ui/dataset"
+            >
+              Dataset
+            </a>
+          </div>
         </div>
       </div>
 
-      <!-- Content -->
-      <div class="mt-8 bg-white border border-slate-200 rounded-2xl shadow-sm p-5">
-        <div class="text-sm text-slate-700 space-y-1">
-          <div>Rows: <span class="text-slate-900 font-medium">{{ num_courses }}</span></div>
-          <div class="break-all">Path: <span class="text-slate-900 font-medium">{{ dataset_path }}</span></div>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6 fade-up">
+        <div class="glass border border-white/60 rounded-[1.6rem] p-5 shadow-sm">
+          <div class="text-xs uppercase tracking-wide text-slate-400 font-semibold">Rows</div>
+          <div class="mt-2 text-3xl font-semibold tracking-tight">{{ num_courses }}</div>
         </div>
 
-        <div class="flex flex-col md:flex-row md:items-center gap-3 mt-5">
-          <div class="flex items-center gap-3">
+        <div class="glass border border-white/60 rounded-[1.6rem] p-5 shadow-sm md:col-span-2">
+          <div class="text-xs uppercase tracking-wide text-slate-400 font-semibold">Dataset path</div>
+          <div class="mt-2 text-sm text-slate-700 break-all">{{ dataset_path }}</div>
+        </div>
+      </div>
+
+      <div class="mt-6 glass border border-white/60 shadow-[0_18px_40px_rgba(15,23,42,0.06)] rounded-[2rem] p-5 md:p-6 fade-up">
+        <div class="flex flex-col lg:flex-row lg:items-end gap-3">
+          <div>
+            <label class="text-sm font-medium text-slate-700">Sample size</label>
             <input
               id="limit"
               type="number"
               value="50"
               min="1"
               max="200"
-              class="w-28 p-2.5 rounded-xl bg-white border border-slate-300 focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-600"
+              class="mt-2 w-32 p-3 rounded-2xl bg-white/80 border border-slate-200 focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
             />
-            <button id="load" class="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-medium shadow-sm">
+          </div>
+
+          <div class="flex-1">
+            <label class="text-sm font-medium text-slate-700">Search title or subject</label>
+            <input
+              id="search"
+              type="text"
+              placeholder="Filter loaded sample..."
+              class="mt-2 w-full p-3 rounded-2xl bg-white/80 border border-slate-200 focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-500"
+            />
+          </div>
+
+          <div class="flex items-end">
+            <button
+              id="load"
+              class="w-full lg:w-auto px-6 py-3 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-medium shadow-lg shadow-blue-200 transition hover:-translate-y-0.5"
+            >
               Load sample
             </button>
+          </div>
+        </div>
+
+        <div class="mt-4 flex items-center gap-3">
+          <div id="datasetLoader" class="hidden items-center gap-2 text-sm text-slate-500">
+            <span class="w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse"></span>
+            <span>Loading dataset sample…</span>
           </div>
           <p id="status" class="text-sm text-slate-600"></p>
         </div>
 
-        <div class="mt-5 overflow-x-auto">
+        <div class="mt-6 overflow-x-auto rounded-[1.4rem] border border-slate-200 bg-white/70">
           <table class="w-full text-sm">
-            <thead class="text-slate-600">
+            <thead class="text-slate-600 bg-slate-50/80">
               <tr class="border-b border-slate-200">
-                <th class="text-left py-3 font-medium">Title</th>
-                <th class="text-left py-3 font-medium">Subject</th>
-                <th class="text-left py-3 font-medium">Level</th>
-                <th class="text-left py-3 font-medium">Link</th>
+                <th class="text-left py-4 px-4 font-medium">Title</th>
+                <th class="text-left py-4 px-4 font-medium">Subject</th>
+                <th class="text-left py-4 px-4 font-medium">Level</th>
+                <th class="text-left py-4 px-4 font-medium">Link</th>
               </tr>
             </thead>
             <tbody id="tbody" class="text-slate-900"></tbody>
           </table>
         </div>
-      </div>
-
-      <div class="mt-10 text-xs text-slate-500">
-        Built by Kimy • CM3005 Data Science • <a class="text-blue-700 hover:text-blue-800" href="/docs">API Docs</a>
       </div>
     </div>
 

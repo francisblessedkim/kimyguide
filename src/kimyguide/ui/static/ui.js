@@ -44,6 +44,7 @@ function renderRec(rec) {
           ${meta.embedding_score !== undefined ? scorePill("emb", meta.embedding_score, "blue") : ""}
           ${meta.tfidf_score !== undefined ? scorePill("tfidf", meta.tfidf_score) : ""}
           ${meta.meta_prior !== undefined ? scorePill("prior", meta.meta_prior) : ""}
+          ${meta.level_adjustment !== undefined ? scorePill("level", meta.level_adjustment, "green") : ""}
           ${confidence !== undefined && confidence !== null ? scorePill("conf", confidence, "green") : ""}
         </div>
       </div>
@@ -168,9 +169,20 @@ async function run() {
     const recs = body.recommendations || [];
 
     if (!recs.length) {
-      statusEl.textContent = "No recommendations were returned for this goal.";
-      statusEl.className = "mt-4 text-sm text-slate-500";
-      if (emptyStateEl) emptyStateEl.style.display = "block";
+      statusEl.textContent = "We couldn’t find a strong course match for that goal in the current dataset. Try a broader topic or rephrase your goal.";
+      statusEl.className = "mt-4 text-sm text-amber-700";
+      if (emptyStateEl) {
+        emptyStateEl.style.display = "block";
+        emptyStateEl.innerHTML = `
+          <div class="bg-amber-50 border border-amber-200 rounded-2xl p-5 text-amber-900">
+            <h3 class="text-lg font-semibold">No strong match found</h3>
+            <p class="mt-2 text-sm leading-6">
+              KimyGuide could not find a sufficiently relevant course for this goal in the current dataset.
+              Try using a broader topic, simpler wording, or a closely related subject area.
+            </p>
+          </div>
+        `;
+      }
       return;
     }
 

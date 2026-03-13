@@ -146,7 +146,8 @@ try:
             w_emb=0.75,
             w_tfidf=0.20,
             w_meta=0.05,
-            confidence_threshold=0.45,
+            confidence_threshold=0.50,
+            no_match_threshold=0.50,
         )
         hybrid_model = HybridRecommender(courses_df, embedder=embed_model, tfidf=tfidf_model, cfg=hybrid_cfg)
 
@@ -548,13 +549,50 @@ def recommend(req: RecommendRequest) -> RecommendResponse:
 
     pool_size = _candidate_pool_size(req, model, len(courses_df))
 
-    # Low-confidence handling (only meaningful for hybrid if it emits 'confidence')
+    # # Low-confidence handling (only meaningful for hybrid if it emits 'confidence')
+    # low_confidence = False
+    # confidence: Optional[float] = None
+    # if "confidence" in recs.columns and len(recs):
+    #     confidence = float(recs["confidence"].iloc[0])
+    #     if model in ("embedding", "hybrid") and hybrid_model is not None:
+    #         low_confidence = confidence < float(hybrid_model.cfg.confidence_threshold)
+
+        # Low-confidence / no-strong-match handling
     low_confidence = False
     confidence: Optional[float] = None
+    no_strong_match = False
+
     if "confidence" in recs.columns and len(recs):
         confidence = float(recs["confidence"].iloc[0])
-        if model in ("embedding", "hybrid") and hybrid_model is not None:
+
+        top_tfidf = float(recs["tfidf_score"].iloc[0]) if "tfidf_score" in recs.columns else 0.0
+        top_meta = float(recs["meta_prior"].iloc[0]) if "meta_prior" in recs.columns else 0.0
+
+        if model == "hybrid" and hybrid_model is not None:
             low_confidence = confidence < float(hybrid_model.cfg.confidence_threshold)
+
+            no_strong_match = (
+                confidence < float(hybrid_model.cfg.no_match_threshold)
+                or (
+                    confidence < 0.55
+                    and top_tfidf < 0.08
+                    and top_meta <= 0.0
+                )
+            )
+
+        elif model == "embedding" and embed_model is not None:
+            threshold_cfg = hybrid_model.cfg if hybrid_model is not None else None
+            if threshold_cfg is not None:
+                low_confidence = confidence < float(threshold_cfg.confidence_threshold)
+                no_strong_match = confidence < float(threshold_cfg.no_match_threshold)
+
+    if no_strong_match:
+        return RecommendResponse(
+            goal=goal,
+            k=k,
+            model_version=f"{MODEL_VERSION} ({method})",
+            recommendations=[],
+        )
 
     # Build the list of RecommendationItem objects to return. For each
     # candidate we compute a concise human-readable explanation (via the
@@ -592,7 +630,7 @@ def recommend(req: RecommendRequest) -> RecommendResponse:
             if col in recs.columns:
                 metadata[col] = row.get(col, "")
 
-        for col in ["embedding_score", "tfidf_score", "meta_prior"]:
+        for col in ["embedding_score", "tfidf_score", "meta_prior", "level_adjustment"]:
             if col in recs.columns:
                 metadata[col] = float(row.get(col, 0.0))
 
