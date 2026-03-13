@@ -3,25 +3,103 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>KimyGuide • Recommend</title>
+    <title>KimyGuide • Get Recommendations</title>
     <script src="https://cdn.tailwindcss.com"></script>
+
+    <style>
+      @keyframes fadeUp {
+        from {
+          opacity: 0;
+          transform: translateY(20px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      @keyframes floatSoft {
+        0%, 100% { transform: translateY(0px); }
+        50% { transform: translateY(-6px); }
+      }
+
+      .fade-up {
+        animation: fadeUp 0.7s ease-out both;
+      }
+
+      .float-soft {
+        animation: floatSoft 4.8s ease-in-out infinite;
+      }
+
+      .glass {
+        background: rgba(255, 255, 255, 0.78);
+        backdrop-filter: blur(14px);
+      }
+
+      .page-bg {
+        background:
+          radial-gradient(circle at top left, rgba(59, 130, 246, 0.12), transparent 28%),
+          radial-gradient(circle at bottom right, rgba(14, 165, 233, 0.10), transparent 28%),
+          linear-gradient(to bottom, #ffffff, #f8fbff);
+      }
+
+      .tooltip-wrap {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+      }
+
+      .tooltip-bubble {
+        position: absolute;
+        bottom: calc(100% + 10px);
+        left: 50%;
+        transform: translateX(-50%);
+        width: 240px;
+        background: #0f172a;
+        color: white;
+        font-size: 12px;
+        line-height: 1.5;
+        padding: 10px 12px;
+        border-radius: 12px;
+        box-shadow: 0 10px 30px rgba(15, 23, 42, 0.18);
+        opacity: 0;
+        pointer-events: none;
+        transition: all 0.18s ease;
+        z-index: 30;
+      }
+
+      .tooltip-wrap:hover .tooltip-bubble {
+        opacity: 1;
+        transform: translateX(-50%) translateY(-2px);
+      }
+
+      .tooltip-bubble::after {
+        content: "";
+        position: absolute;
+        top: 100%;
+        left: 50%;
+        transform: translateX(-50%);
+        border-width: 6px;
+        border-style: solid;
+        border-color: #0f172a transparent transparent transparent;
+      }
+    </style>
   </head>
 
-  <body class="bg-white text-slate-900">
-    <div class="max-w-6xl mx-auto px-4 py-10">
-      <!-- Header -->
-      <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-        <div>
-          <div class="flex items-center gap-3">
-            <div class="h-10 w-10 rounded-2xl bg-blue-600 flex items-center justify-center text-white font-semibold">K</div>
-            <div>
-              <h1 class="text-2xl font-semibold tracking-tight">KimyGuide</h1>
-              <p class="text-slate-600 text-sm">Goal-based cold-start recommender • <span class="text-slate-900">{{ model_version }}</span></p>
-            </div>
+  <body class="page-bg min-h-screen text-slate-900">
+    <!-- Header -->
+    <header class="border-b border-slate-200/70 glass sticky top-0 z-40">
+      <div class="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+        <a href="/" class="flex items-center gap-3">
+          <div class="h-10 w-10 rounded-2xl bg-blue-600 text-white flex items-center justify-center font-bold shadow-sm">
+            K
           </div>
-        </div>
+          <div>
+            <div class="text-lg font-semibold tracking-tight">KimyGuide</div>
+            <div class="text-xs text-slate-500">Goal-driven educational recommender</div>
+          </div>
+        </a>
 
-        <!-- Nav -->
         <div class="flex flex-wrap gap-2">
           <a class="px-4 py-2 rounded-full text-sm border border-slate-200 bg-blue-50 text-blue-800" href="/ui">Recommend</a>
           <a class="px-4 py-2 rounded-full text-sm border border-slate-200 hover:bg-slate-50" href="/ui/compare">Compare</a>
@@ -29,71 +107,174 @@
           <a class="px-4 py-2 rounded-full text-sm border border-slate-200 hover:bg-slate-50" href="/ui/dataset">Dataset</a>
         </div>
       </div>
+    </header>
 
-      <!-- Main -->
-      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-8">
-        <!-- Inputs -->
-        <div class="lg:col-span-1 bg-white border border-slate-200 rounded-2xl shadow-sm p-5">
-          <h2 class="text-lg font-semibold tracking-tight">Your learning goal</h2>
-          <p class="text-slate-600 text-sm mt-1">Describe what you want to learn — we’ll recommend courses even with no user history.</p>
-
-          <textarea
-            id="goal"
-            class="mt-4 w-full h-28 p-3 rounded-xl bg-white border border-slate-300 focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-600"
-            placeholder="e.g., I want to learn data science"
-          ></textarea>
-
-          <div class="grid grid-cols-2 gap-3 mt-4">
-            <div>
-              <label class="text-sm text-slate-600">Model</label>
-              <select id="model" class="mt-1 w-full p-2.5 rounded-xl bg-white border border-slate-300 focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-600">
-                <option value="hybrid" selected>Hybrid (recommended)</option>
-                <option value="embedding">Embedding</option>
-                <option value="tfidf">TF-IDF (baseline)</option>
-              </select>
-            </div>
-            <div>
-              <label class="text-sm text-slate-600">Top K</label>
-              <input id="k" type="number" value="5" min="1" max="20"
-                class="mt-1 w-full p-2.5 rounded-xl bg-white border border-slate-300 focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-600"/>
-            </div>
+    <main class="max-w-7xl mx-auto px-6 py-10">
+      <!-- Hero intro -->
+      <section class="grid lg:grid-cols-2 gap-8 items-center">
+        <div class="fade-up">
+          <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 border border-blue-100 text-blue-700 text-sm font-medium">
+            Live recommender • {{ model_version }}
           </div>
 
-          <div class="grid grid-cols-2 gap-3 mt-4">
-            <div>
-              <label class="text-sm text-slate-600">Candidates</label>
-              <input id="cand" type="number" value="200" min="20" max="1000"
-                class="mt-1 w-full p-2.5 rounded-xl bg-white border border-slate-300 focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-600"/>
-              <p class="text-xs text-slate-500 mt-1">Used for embedding/hybrid retrieval.</p>
+          <h1 class="mt-5 text-4xl md:text-5xl font-semibold tracking-tight leading-tight">
+            Tell KimyGuide
+            <span class="text-blue-600">what you want to learn</span>
+          </h1>
+
+          <p class="mt-5 text-lg text-slate-600 leading-8 max-w-2xl">
+            Enter a learning goal in simple language and KimyGuide will suggest relevant courses to help you get started.
+            This page is designed for quick discovery, especially for users who are new to a subject area.
+          </p>
+
+          <div class="mt-8 flex flex-wrap gap-3 text-sm text-slate-500">
+            <span class="px-3 py-1 rounded-full bg-white border border-slate-200">Natural language goals</span>
+            <span class="px-3 py-1 rounded-full bg-white border border-slate-200">Real course catalogue</span>
+            <span class="px-3 py-1 rounded-full bg-white border border-slate-200">Fast recommendations</span>
+          </div>
+        </div>
+
+        <div class="fade-up float-soft" style="animation-delay: 0.12s;">
+          <div class="rounded-[2rem] border border-slate-200 bg-white shadow-xl p-6 md:p-7">
+            <div class="text-sm text-slate-500">Example goals</div>
+            <div class="mt-4 grid gap-3">
+              <div class="rounded-2xl border border-slate-200 p-4 text-slate-700 hover:border-blue-300 transition">
+                “I want to learn French for travel”
+              </div>
+              <div class="rounded-2xl border border-slate-200 p-4 text-slate-700 hover:border-blue-300 transition">
+                “I want to study data science fundamentals”
+              </div>
+              <div class="rounded-2xl border border-slate-200 p-4 text-slate-700 hover:border-blue-300 transition">
+                “I want to understand machine learning”
+              </div>
             </div>
 
-            <div class="flex items-end">
-              <label class="inline-flex items-center gap-2 cursor-pointer select-none">
-                <input id="explain" type="checkbox" checked class="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-200"/>
-                <span class="text-sm text-slate-700">Explain results</span>
+            <div class="mt-5 text-sm text-slate-500 leading-6">
+              Tip: write your goal naturally. You do not need to use technical terms.
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Recommender form -->
+      <section class="mt-10 fade-up" style="animation-delay: 0.16s;">
+        <div class="rounded-[2rem] border border-slate-200 bg-white shadow-sm p-6 md:p-8">
+          <div class="flex flex-col lg:flex-row lg:items-end gap-5">
+            <!-- Goal input -->
+            <div class="flex-1">
+              <label for="goal" class="block text-sm font-medium text-slate-700">
+                What do you want to learn?
               </label>
+              <textarea
+                id="goal"
+                rows="4"
+                placeholder="Example: I want to learn French for travel"
+                class="mt-2 w-full rounded-2xl border border-slate-300 bg-white px-4 py-4 text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-600 resize-none"
+              ></textarea>
+              <p class="mt-2 text-sm text-slate-500">
+                Describe your learning goal in one sentence. The clearer the goal, the better the recommendations.
+              </p>
+            </div>
+
+            <!-- Controls -->
+            <div class="w-full lg:w-[340px] space-y-4">
+              <div>
+                <div class="flex items-center gap-2">
+                  <label for="k" class="text-sm font-medium text-slate-700">Number of results</label>
+                  <span class="tooltip-wrap">
+                    <span class="h-5 w-5 rounded-full border border-slate-300 text-slate-500 text-xs flex items-center justify-center cursor-help">
+                      i
+                    </span>
+                    <span class="tooltip-bubble">
+                      This controls how many recommendations KimyGuide shows. A smaller number keeps results focused, while a larger number shows more options.
+                    </span>
+                  </span>
+                </div>
+
+                <input
+                  id="k"
+                  type="number"
+                  min="1"
+                  max="20"
+                  value="5"
+                  class="mt-2 w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-600"
+                />
+              </div>
+
+              <div>
+                <div class="flex items-center gap-2">
+                  <label for="model" class="text-sm font-medium text-slate-700">Recommendation mode</label>
+                  <span class="tooltip-wrap">
+                    <span class="h-5 w-5 rounded-full border border-slate-300 text-slate-500 text-xs flex items-center justify-center cursor-help">
+                      i
+                    </span>
+                    <span class="tooltip-bubble">
+                      Hybrid is the recommended option because it combines keyword matching and semantic similarity. The other options are useful for comparison.
+                    </span>
+                  </span>
+                </div>
+
+                <select
+                  id="model"
+                  class="mt-2 w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-600"
+                >
+                  <option value="hybrid" selected>Hybrid (recommended)</option>
+                  <option value="embedding">Semantic</option>
+                  <option value="tfidf">Keyword-based</option>
+                </select>
+              </div>
+
+              <div class="flex items-center gap-3 pt-1">
+                <input
+                  id="explain"
+                  type="checkbox"
+                  checked
+                  class="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                />
+                <label for="explain" class="text-sm text-slate-600">
+                  Show short explanations for recommendations
+                </label>
+              </div>
+
+              <button
+                id="run"
+                class="w-full rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-medium px-5 py-3.5 shadow-sm transition"
+              >
+                Get Recommendations
+              </button>
             </div>
           </div>
 
-          <button id="run"
-            class="mt-5 w-full px-4 py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-medium shadow-sm">
-            Recommend
-          </button>
-
-          <p id="status" class="mt-3 text-sm text-slate-600"></p>
+          <div id="status" class="mt-4 text-sm text-slate-500"></div>
         </div>
+      </section>
 
-        <!-- Results -->
-        <div class="lg:col-span-2">
-          <div class="flex items-center justify-between">
-            <h2 class="text-lg font-semibold tracking-tight">Recommendations</h2>
-            <span id="mv" class="text-sm text-slate-500"></span>
+      <!-- Results -->
+      <section class="mt-8 fade-up" style="animation-delay: 0.2s;">
+        <div class="rounded-[2rem] border border-slate-200 bg-white shadow-sm p-6 md:p-8">
+          <div class="flex items-center justify-between gap-4">
+            <div>
+              <h2 class="text-2xl font-semibold tracking-tight">Recommendations</h2>
+              <p class="mt-1 text-sm text-slate-500">
+                Your recommended courses will appear here after you submit a learning goal.
+              </p>
+            </div>
           </div>
 
-          <div id="results" class="mt-4 grid grid-cols-1 gap-4"></div>
+          <div id="emptyState" class="mt-8 rounded-3xl border border-dashed border-slate-300 bg-slate-50/70 p-10 text-center">
+            <div class="mx-auto h-14 w-14 rounded-2xl bg-blue-50 text-blue-700 flex items-center justify-center text-xl font-semibold">
+              K
+            </div>
+            <h3 class="mt-4 text-lg font-semibold text-slate-800">No recommendations yet</h3>
+            <p class="mt-2 text-slate-500 max-w-xl mx-auto leading-7">
+              Enter a goal above, choose how many results you want, and KimyGuide will generate a ranked list of course suggestions.
+            </p>
+          </div>
+
+          <div id="results" class="mt-6 space-y-4"></div>
         </div>
-      </div>
-    </div>
+      </section>
+    </main>
 
     <script src="/static/ui.js"></script>
   </body>

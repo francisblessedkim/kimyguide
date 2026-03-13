@@ -1,109 +1,195 @@
 function esc(s) {
   return (s ?? "").toString().replace(/[&<>"']/g, (c) => ({
-    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;"
   }[c]));
 }
 
-function pill(text, variant="neutral") {
+function pill(text, variant = "neutral") {
   const base = "inline-flex items-center px-2.5 py-1 rounded-full text-xs border";
   const styles = {
     neutral: "bg-slate-50 border-slate-200 text-slate-700",
     blue: "bg-blue-50 border-blue-200 text-blue-800",
+    green: "bg-green-50 border-green-200 text-green-800"
   };
   return `<span class="${base} ${styles[variant] || styles.neutral}">${esc(text)}</span>`;
+}
+
+function scorePill(label, value, variant = "neutral") {
+  return pill(`${label}: ${Number(value).toFixed(3)}`, variant);
 }
 
 function renderRec(rec) {
   const meta = rec.metadata || {};
   const ev = rec.evidence || {};
+
   const url = meta.url || "";
   const subject = meta.subject || "";
   const level = meta.level || "";
   const provider = meta.provider || "";
   const confidence = meta.confidence;
 
-  const breakdown = (meta.embedding_score !== undefined || meta.tfidf_score !== undefined)
-    ? `
-      <div class="mt-3 text-xs text-slate-600">
-        <div class="flex flex-wrap gap-2">
-          ${meta.embedding_score !== undefined ? pill(`emb: ${Number(meta.embedding_score).toFixed(3)}`, "blue") : ""}
-          ${meta.tfidf_score !== undefined ? pill(`tfidf: ${Number(meta.tfidf_score).toFixed(3)}`) : ""}
-          ${meta.meta_prior !== undefined ? pill(`prior: ${Number(meta.meta_prior).toFixed(3)}`) : ""}
-          ${confidence !== undefined && confidence !== null ? pill(`conf: ${Number(confidence).toFixed(3)}`, "blue") : ""}
+  const breakdown =
+    meta.embedding_score !== undefined ||
+    meta.tfidf_score !== undefined ||
+    meta.meta_prior !== undefined ||
+    confidence !== undefined
+      ? `
+      <div class="mt-4 pt-4 border-t border-slate-100">
+        <div class="text-xs uppercase tracking-wide text-slate-400 font-medium">Model breakdown</div>
+        <div class="mt-2 flex flex-wrap gap-2">
+          ${meta.embedding_score !== undefined ? scorePill("emb", meta.embedding_score, "blue") : ""}
+          ${meta.tfidf_score !== undefined ? scorePill("tfidf", meta.tfidf_score) : ""}
+          ${meta.meta_prior !== undefined ? scorePill("prior", meta.meta_prior) : ""}
+          ${confidence !== undefined && confidence !== null ? scorePill("conf", confidence, "green") : ""}
         </div>
       </div>
-    ` : "";
+    `
+      : "";
 
   return `
-  <div class="bg-white border border-slate-200 rounded-2xl shadow-sm p-5">
-    <div class="flex items-start justify-between gap-4">
-      <div>
-        <div class="text-lg font-semibold tracking-tight">${esc(rec.title)}</div>
-        <div class="mt-2 flex flex-wrap gap-2">
-          ${provider ? pill(provider) : ""}
-          ${subject ? pill(subject, "blue") : ""}
-          ${level ? pill(level) : ""}
+    <article class="bg-white border border-slate-200 rounded-[1.6rem] shadow-sm p-5 md:p-6 hover:shadow-md transition duration-200">
+      <div class="flex flex-col md:flex-row md:items-start md:justify-between gap-5">
+        <div class="flex-1">
+          <div class="flex flex-wrap items-center gap-2">
+            ${provider ? pill(provider) : ""}
+            ${subject ? pill(subject, "blue") : ""}
+            ${level ? pill(level) : ""}
+          </div>
+
+          <h3 class="mt-4 text-xl font-semibold tracking-tight text-slate-900">
+            ${esc(rec.title)}
+          </h3>
+
+          ${rec.why ? `
+            <p class="mt-3 text-slate-600 leading-7">
+              ${esc(rec.why)}
+            </p>
+          ` : ""}
+        </div>
+
+        <div class="md:text-right min-w-[90px]">
+          <div class="text-xs uppercase tracking-wide text-slate-400 font-medium">Score</div>
+          <div class="mt-1 text-2xl font-semibold tracking-tight text-slate-900">
+            ${Number(rec.score).toFixed(3)}
+          </div>
         </div>
       </div>
 
-      <div class="text-right min-w-[72px]">
-        <div class="text-xs text-slate-500">score</div>
-        <div class="text-2xl font-semibold tracking-tight">${Number(rec.score).toFixed(3)}</div>
+      ${breakdown}
+
+      <div class="mt-5 flex flex-wrap items-center gap-3">
+        ${url ? `
+          <a
+            class="inline-flex items-center px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium transition"
+            href="${esc(url)}"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Visit course
+          </a>
+        ` : ""}
+
+        <details class="group">
+          <summary class="list-none cursor-pointer inline-flex items-center px-4 py-2 rounded-xl border border-slate-200 hover:border-blue-300 hover:bg-blue-50 text-sm text-slate-700 font-medium transition">
+            View evidence
+          </summary>
+
+          <div class="mt-3 rounded-2xl bg-slate-50 border border-slate-200 p-4 text-sm text-slate-600 space-y-2">
+            ${ev.method ? `<div><span class="font-medium text-slate-800">Method:</span> ${esc(ev.method)}</div>` : ""}
+            ${ev.model_name ? `<div><span class="font-medium text-slate-800">Model:</span> ${esc(ev.model_name)}</div>` : ""}
+            ${ev.candidate_pool_size ? `<div><span class="font-medium text-slate-800">Candidate pool:</span> ${esc(ev.candidate_pool_size)}</div>` : ""}
+            ${(ev.matched_terms && ev.matched_terms.length)
+              ? `<div><span class="font-medium text-slate-800">Matched terms:</span> <div class="mt-2 flex flex-wrap gap-2">${ev.matched_terms.map(t => pill(t, "blue")).join("")}</div></div>`
+              : `<div class="text-slate-500">No explicit matched terms were exposed for this result.</div>`
+            }
+          </div>
+        </details>
       </div>
-    </div>
-
-    ${rec.why ? `<p class="mt-4 text-slate-700 leading-relaxed">${esc(rec.why)}</p>` : ""}
-
-    ${breakdown}
-
-    <details class="mt-4">
-      <summary class="cursor-pointer text-sm text-blue-700 hover:text-blue-800 select-none">Evidence</summary>
-      <div class="mt-3 text-sm text-slate-600 space-y-2">
-        ${ev.method ? `<div>Method: <span class="text-slate-900 font-medium">${esc(ev.method)}</span></div>` : ""}
-        ${ev.model_name ? `<div>Model: <span class="text-slate-900 font-medium">${esc(ev.model_name)}</span></div>` : ""}
-        ${ev.candidate_pool_size ? `<div>Candidate pool: <span class="text-slate-900 font-medium">${esc(ev.candidate_pool_size)}</span></div>` : ""}
-        ${(ev.matched_terms && ev.matched_terms.length) ? `<div>Matched terms: ${ev.matched_terms.map(t => pill(t,"blue")).join(" ")}</div>` : ""}
-        ${url ? `<div><a class="text-blue-700 hover:text-blue-800 font-medium" href="${esc(url)}" target="_blank">Open course →</a></div>` : ""}
-      </div>
-    </details>
-  </div>`;
+    </article>
+  `;
 }
 
 async function run() {
-  const goal = document.getElementById("goal").value;
-  const model = document.getElementById("model").value;
-  const k = Number(document.getElementById("k").value || 5);
-  const top_n_candidates = Number(document.getElementById("cand").value || 200);
-  const explain = document.getElementById("explain").checked;
+  const goalEl = document.getElementById("goal");
+  const modelEl = document.getElementById("model");
+  const kEl = document.getElementById("k");
+  const explainEl = document.getElementById("explain");
+  const statusEl = document.getElementById("status");
+  const resultsEl = document.getElementById("results");
+  const emptyStateEl = document.getElementById("emptyState");
 
-  const status = document.getElementById("status");
-  const results = document.getElementById("results");
-  const mv = document.getElementById("mv");
+  const goal = goalEl?.value?.trim() || "";
+  const model = modelEl?.value || "hybrid";
+  const k = Number(kEl?.value || 5);
+  const explain = Boolean(explainEl?.checked);
 
-  results.innerHTML = "";
-  mv.textContent = "";
-  status.textContent = "Running…";
-
-  const payload = { goal, k, model, top_n_candidates, explain };
-
-  const res = await fetch("/recommend", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-
-  const body = await res.json();
-
-  if (!res.ok) {
-    status.textContent = `Error: ${body.detail || body.message || "Request failed"}`;
+  if (!goal) {
+    statusEl.textContent = "Please enter a learning goal before requesting recommendations.";
+    statusEl.className = "mt-4 text-sm text-red-600";
     return;
   }
 
-  status.textContent = "";
-  mv.textContent = body.model_version || "";
+  statusEl.textContent = "Generating recommendations…";
+  statusEl.className = "mt-4 text-sm text-slate-500";
 
-  const recs = body.recommendations || [];
-  results.innerHTML = recs.map(renderRec).join("");
+  resultsEl.innerHTML = "";
+  if (emptyStateEl) emptyStateEl.style.display = "none";
+
+  const payload = {
+    goal,
+    k,
+    model,
+    top_n_candidates: 200,
+    explain
+  };
+
+  try {
+    const res = await fetch("/recommend", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(payload)
+    });
+
+    const body = await res.json();
+
+    if (!res.ok) {
+      statusEl.textContent = `Error: ${body.detail || body.message || "Request failed."}`;
+      statusEl.className = "mt-4 text-sm text-red-600";
+      if (emptyStateEl) emptyStateEl.style.display = "block";
+      return;
+    }
+
+    const recs = body.recommendations || [];
+
+    if (!recs.length) {
+      statusEl.textContent = "No recommendations were returned for this goal.";
+      statusEl.className = "mt-4 text-sm text-slate-500";
+      if (emptyStateEl) emptyStateEl.style.display = "block";
+      return;
+    }
+
+    resultsEl.innerHTML = recs.map(renderRec).join("");
+    statusEl.textContent = `Showing ${recs.length} recommendation${recs.length === 1 ? "" : "s"} using ${body.model_version || model}.`;
+    statusEl.className = "mt-4 text-sm text-green-700";
+  } catch (err) {
+    console.error(err);
+    statusEl.textContent = "Something went wrong while contacting the recommendation service.";
+    statusEl.className = "mt-4 text-sm text-red-600";
+    if (emptyStateEl) emptyStateEl.style.display = "block";
+  }
 }
 
-document.getElementById("run").addEventListener("click", run);
+document.getElementById("run")?.addEventListener("click", run);
+
+// Allow Enter/Ctrl+Enter experience
+document.getElementById("goal")?.addEventListener("keydown", (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
+    run();
+  }
+});
