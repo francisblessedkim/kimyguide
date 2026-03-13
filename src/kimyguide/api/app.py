@@ -170,9 +170,19 @@ except Exception as e:
 #         "dataset_path": str(DATA_PATH),
 #     }
 
-@app.get("/", include_in_schema=False)
-def root():
-    return RedirectResponse(url="/ui", status_code=307)
+# @app.get("/", include_in_schema=False)
+# def root():
+#     return RedirectResponse(url="/ui", status_code=307)
+
+@app.get("/", response_class=HTMLResponse)
+def landing_page(request: Request):
+    return templates.TemplateResponse(
+        "home.html",
+        {
+            "request": request,
+            "model_version": MODEL_VERSION,
+        },
+    )
 
 
 @app.get("/health")
