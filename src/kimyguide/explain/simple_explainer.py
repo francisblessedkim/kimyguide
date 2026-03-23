@@ -31,7 +31,13 @@ def extract_keywords(text: str, max_words: int = 6) -> List[str]:
     preserves the original token order up to `max_words` unique
     keywords.
     """
+    # Tokenise on alphabetic runs only (removes punctuation/numbers).
+    # Lowercasing here ensures matching is case-insensitive.
     tokens = re.findall(r"\b[a-zA-Z]+\b", str(text).lower())
+
+    # Filter out short tokens and noisy filler words (see STOPWORDS).
+    # The length threshold (>=4) is a cheap heuristic to drop many stop
+    # words while keeping meaningful stems like 'train', 'learn', 'data'.
     tokens = [t for t in tokens if len(t) >= 4 and t not in STOPWORDS]
 
     seen = set()
@@ -93,22 +99,36 @@ def add_explanations(recs: pd.DataFrame) -> pd.DataFrame:
     return recs
 
 class SimpleExplainer:
-    """
-    Small wrapper class used by the FastAPI layer.
+    """Lightweight explainer wrapper used by the API.
 
-    Keeps the existing function-based implementation (extract_keywords,
-    add_explanations) but provides a single `explain()` method that
-    returns:
-      - why (str)
-      - matched_terms (List[str])
+    This thin class keeps the functional helpers but exposes a single
+    `explain()` method that the FastAPI endpoints call. The goal is to
+    provide a consistent tuple (why:str, matched_terms:List[str]) which
+    can be attached to a `RecommendationItem.evidence` or rendered by the
+    UI. The implementation is intentionally simple and deterministic so
+    it is easy to reason about and test.
     """
 
     def explain(self, goal: str, title: str = "", description: str = "", tags: str = ""):
+        """Return a short explanation and the list of matched terms.
+
+        Parameters
+        - goal: user-provided goal text
+        - title/description/tags: item fields to consider when extracting
+          keywords for matching
+
+        Returns
+        - why: short human-readable explanation
+        - matched: list of matched keyword tokens (may be empty)
+        """
+
+        # Extract compact keyword lists for both goal and item text
         goal_keywords = extract_keywords(goal, max_words=6)
 
         item_text = f"{title} {description} {tags}"
         item_keywords = extract_keywords(item_text, max_words=10)
 
+        # Intersection in preserved goal order - prefer goal tokens present in item
         matched = [kw for kw in goal_keywords if kw in item_keywords]
 
         if matched:
@@ -118,6 +138,7 @@ class SimpleExplainer:
                 "and this course directly covers those topics."
             )
         else:
+            # Generic fallback explanation when explicit overlap is small
             why = (
                 "Recommended because it is related to your learning goal based on content similarity."
             )

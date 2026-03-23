@@ -20,9 +20,20 @@ def test_hybrid_recommender_returns_k_and_scores(tmp_path):
 
     hybrid = HybridRecommender(df, embedder=emb, tfidf=tfidf, cfg=HybridConfig(top_n_candidates=3))
 
+    # Request top-2 recommendations for the given query text.
     recs = hybrid.recommend("deep learning neural networks", top_k=2)
+
+    # Expect exactly two recommendations returned.
     assert len(recs) == 2
+
+    # Ensure the DataFrame includes the combined score for each recommendation.
     assert "score" in recs.columns
+
+    # Ensure the embedding-based similarity score is present.
     assert "embedding_score" in recs.columns
+
+    # Ensure the TF-IDF based similarity score is present.
     assert "tfidf_score" in recs.columns
+
+    # Ensure a confidence metric (e.g., normalized or calibrated combined score) is provided.
     assert "confidence" in recs.columns

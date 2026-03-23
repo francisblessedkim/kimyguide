@@ -1,5 +1,84 @@
 """
-FastAPI app for KimyGuide (general cold-start).
+# FastAPI application for KimyGuide: goal-based cold-start MOOC recommender
+KimyGuide API (kimyguide.api.app)
+
+This module defines a FastAPI application that exposes a lightweight
+goal-based cold-start recommender over an OpenLearn-derived dataset.
+
+High-level overview
+- Loads a CSV dataset (default: data/processed/openlearn_courses.csv).
+- Instantiates a TF-IDF baseline recommender (always available) and,
+    optionally, an embedding-based recommender and a hybrid recommender
+    (configurable via environment variables).
+- Serves REST endpoints for health, evaluation, recommendation, and a
+    small Jinja2-backed UI.
+
+How to run
+- From repository root:
+
+Key configuration / environment variables
+- KIMYGUIDE_DATA_PATH: override the default dataset CSV path.
+- KIMYGUIDE_SKIP_EMBEDDINGS: if "1", embedding and hybrid models are
+    skipped to allow fast/test runs without heavy model loading.
+
+Module-level behavior
+- On import the module attempts to:
+        1. Load the dataset via _load_courses(path) which:
+             - Validates required columns: course_id, title, description, tags, text.
+             - Coerces these columns to strings, removes rows with empty text,
+                 and normalizes course_id to str.
+        2. Instantiate the TF-IDF recommender (TfidfGoalRecommender).
+        3. Optionally instantiate:
+             - EmbeddingRecommender using EmbeddingConfig (caching supported),
+                 and HybridRecommender configured by HybridConfig.
+- Initialization failures or environment-based skips leave optional model
+    variables as None and are reflected in /health and by returning 503
+    for embedding/hybrid recommendation requests when appropriate.
+
+Primary endpoints
+- GET /            : Landing page (Jinja2 template "home.html").
+- GET /health      : Returns JSON health summary including:
+        status, model_version, dataset_path, dataset_loaded, num_courses,
+        embedding_model (name or None), embedding_enabled, hybrid_enabled.
+- GET /api/eval    : Run a small offline evaluation (sanity | subject | desc)
+        - Parameters: nq (num queries), k (cutoff), mode, n_boot (bootstrap samples).
+        - Returns: metrics per model (MRR/Recall/NDCG with bootstrap CIs),
+            coverage, diversity (from embeddings if available), k-sweep series,
+            and raw recommendations per query for UI/analysis.
+- GET /api/info    : Returns basic endpoints and model/version info.
+- POST /recommend  : Main recommendation API.
+        - Accepts RecommendRequest (goal text, model choice: tfidf|embedding|hybrid,
+            k, explain flag, optional top_n_candidates).
+        - Validates input, gates embedding/hybrid requests if embeddings are disabled.
+        - Runs selected model and returns RecommendResponse containing:
+            goal, k, model_version, and a list of RecommendationItem objects.
+        - Each RecommendationItem can include:
+            course_id, title, score, optional human-readable "why" (via SimpleExplainer),
+            Evidence (matched_terms, matched_fields, candidate_pool_size, method,
+            model_name, confidence), and metadata (tags, provider, subject, level,
+            duration_hours, url, embedding_score, tfidf_score, meta_prior, level_adjustment).
+        - Handles low-confidence and "no-strong-match" cases with configurable
+            thresholds (hybrid_cfg.confidence_threshold and no_match_threshold), and
+            in severe cases returns an empty recommendation list indicating no strong match.
+- UI routes (/ui, /ui/compare, /ui/eval, /ui/dataset) serve Jinja templates and a small
+    static JS/CSS bundle mounted at /static.
+- GET /dataset/sample : Return a deterministic small sample of dataset rows for UI/tests.
+- POST /evaluate      : Backwards-compatible evaluation route that delegates to
+    quick_evaluate_models if available.
+
+Important implementation notes
+- Explainability: SimpleExplainer produces short, rule-based explanations and
+    matched terms by inspecting overlaps between the goal and title/description/tags.
+- Diversity: A simple diversity proxy computes 1 - mean cosine similarity across
+    returned embedding pairs; returns 0.0 if embeddings unavailable.
+- Evaluation: Uses DCG / nDCG calculations, mean reciprocal rank (MRR),
+    recall@k and bootstrap confidence intervals for robustness reporting.
+- Error handling:
+        - Request validation errors return a 422 JSON with details.
+        - Missing dataset or uninitialized required models surface as HTTP 500.
+        - Invalid model names or bad parameters return 400.
+        - Requests for embedding/hybrid when embeddings are disabled return 503.
+- Model/version provenance: MODEL_VERSION string is exposed via responses andFastAPI app for KimyGuide (general cold-start).
 
 Dataset:
   data/processed/openlearn_courses.csv
@@ -157,48 +236,60 @@ except Exception as e:
     print(f"[ERROR] Failed to initialize models: {e}")
 
 
-# @app.get("/")
-# def root():
-#     return {
-#         "name": "KimyGuide API",
-#         "docs": "/docs",
-#         "health": "/health",
-#         "ui": "/ui",
-#         "compare": "/ui/compare",
-#         "eval": "/ui/eval",
-#         "dataset": "/ui/dataset",
-#         "model_version": MODEL_VERSION,
-#         "dataset_path": str(DATA_PATH),
-#     }
-
-# @app.get("/", include_in_schema=False)
-# def root():
-#     return RedirectResponse(url="/ui", status_code=307)
-
 @app.get("/", response_class=HTMLResponse)
 def landing_page(request: Request):
+    """
+    Landing page route.
+
+    Renders the site's home template. The `request` object is required by
+    Jinja2Templates so URL building and request-aware helpers work inside
+    the template. We also pass the current model version so the UI can
+    display it (useful for debugging / user info).
+    """
+    # templates.TemplateResponse(template_name, context) returns an HTMLResponse
+    # where `request` must be included in the context for Jinja2Templates.
     return templates.TemplateResponse(
         "home.html",
         {
-            "request": request,
-            "model_version": MODEL_VERSION,
+            "request": request,           # required by Jinja template runtime
+            "model_version": MODEL_VERSION,  # expose model/version info to UI
         },
     )
 
 
 @app.get("/health")
 def health() -> Dict[str, Any]:
+    """
+    Health check endpoint.
+
+    Returns a JSON-serializable dict with basic status information about
+    whether the dataset and the various models were successfully loaded.
+    """
+    # Basic OK: dataset loaded and TF-IDF model available (the lightweight baseline)
     ok = courses_df is not None and tfidf_model is not None
+
+    # Flags for optional models (may be disabled via env / failed to initialize)
     embeddings_ok = embed_model is not None
     hybrid_ok = hybrid_model is not None
 
+    # Build a concise health payload:
     return {
+        # High-level status string for quick checks
         "status": "ok" if ok else "error",
+
+        # Version / provenance info
         "model_version": MODEL_VERSION,
         "dataset_path": str(DATA_PATH),
+
+        # Dataset/model availability details
         "dataset_loaded": bool(ok),
+        # Number of courses loaded (0 if dataset missing)
         "num_courses": int(len(courses_df)) if courses_df is not None else 0,
+
+        # Embedding model name (None-safe access). If embeddings disabled this is None.
         "embedding_model": getattr(getattr(embed_model, "cfg", None), "model_name", None),
+
+        # Boolean flags indicating if optional components are enabled
         "embedding_enabled": bool(embeddings_ok),
         "hybrid_enabled": bool(hybrid_ok),
     }
@@ -710,10 +801,25 @@ def ui_dataset(request: Request):
 
 @app.get("/dataset/sample")
 def dataset_sample(limit: int = 50) -> Dict[str, Any]:
+    """
+    Return a small sample of dataset rows for UI/testing.
+
+    Args:
+      limit: requested number of rows (will be clamped to [1, 200]).
+
+    The sample uses a fixed random_state to be reproducible across calls.
+    """
     if courses_df is None:
+        # dataset must be loaded before serving samples
         raise HTTPException(status_code=500, detail="Dataset not loaded")
+
+    # Clamp the requested limit to a sensible maximum to avoid large payloads
     limit = max(1, min(int(limit), 200))
+
+    # Use a deterministic sample for stability in tests / UI
     sample = courses_df.sample(n=min(limit, len(courses_df)), random_state=7)
+
+    # Select a few useful columns, replace NaNs with empty strings and serialize
     return {
         "rows": sample[["course_id", "title", "subject", "level", "url"]]
         .fillna("")

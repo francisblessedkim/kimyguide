@@ -20,7 +20,7 @@ def build_tfidf_matrix(
 
     The function accepts a DataFrame and a column name containing text
     for each item. The returned vectorizer can be used to transform
-    arbitrary query text (e.g. user goals) into the same feature
+    arbitrary query text for example user goals into the same feature
     space.
     """
     # Ensure we have string values and a deterministic corpus list

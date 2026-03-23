@@ -41,6 +41,7 @@ class HybridConfig:
 
 
 def _safe_str(x) -> str:
+    # Safely coerce possibly-missing values to an empty string
     return "" if x is None else str(x)
 
 
@@ -53,6 +54,10 @@ def _normalize_01(x: np.ndarray) -> np.ndarray:
         return np.zeros_like(x, dtype=np.float32)
     return ((x - xmin) / (xmax - xmin)).astype(np.float32)
 
+# _normalize_01: min-max normalisation to [0,1]. Returns zeros when
+# all values are identical to avoid divide-by-zero. This keeps different
+# signal scales comparable before weighted combination.
+
 
 class HybridRecommender:
     def __init__(
@@ -63,6 +68,8 @@ class HybridRecommender:
         cfg: Optional[HybridConfig] = None,
         text_col: str = "text",
     ):
+        # Configuration, items and models are stored on the instance.
+        # We copy the DataFrame to avoid accidental mutation of the caller's data.
         if cfg is None:
             cfg = HybridConfig()
 
@@ -71,10 +78,12 @@ class HybridRecommender:
 
         self.cfg = cfg
         self.items = items.reset_index(drop=True).copy()
-        self.embedder = embedder
-        self.tfidf = tfidf
+        self.embedder = embedder  # must implement score_all(goal_text) -> np.ndarray
+        self.tfidf = tfidf        # TF-IDF recommender instance (vectorizer + item_matrix)
         self.text_col = text_col
 
+        # Pull TF-IDF internals for fast scoring. If they are missing, fail
+        # early: the hybrid pipeline depends on a fitted TF-IDF vectorizer.
         self._vectorizer = getattr(self.tfidf, "vectorizer", None)
         self._item_matrix = getattr(self.tfidf, "item_matrix", None)
 
@@ -111,7 +120,8 @@ class HybridRecommender:
             "deep dive",
             "master",
         ]
-
+        # Treat the goal as beginner intent when beginner cues appear and
+        # there are no conflicting advanced indicators.
         has_beginner = any(p in g for p in beginner_phrases)
         has_advanced = any(p in g for p in advanced_phrases)
 
@@ -130,6 +140,10 @@ class HybridRecommender:
         if "advanced" in level:
             return self.cfg.advanced_penalty
         return 0.0
+
+# _level_adjustment: If the user appears to be a beginner, promote items
+# whose `level` looks introductory and penalize items that are intermediate
+# or advanced. This is a simple soft-bias applied as an additive term.
 
     def _meta_prior(self, goal: str, row: pd.Series) -> float:
         g = goal.lower()
@@ -155,9 +169,14 @@ class HybridRecommender:
             ]
         )
 
+        # Build a simple string combining searchable metadata fields and
+        # check for keyword presence that matches coarse goal categories.
         prior = 0.0
         searchable = f"{subject} {title} {tags} {text}"
 
+        # Increase prior when item metadata contains domain keywords related
+        # to the user's apparent intent (data / ai / languages). The prior
+        # is capped at 1.0 and used as a lightweight metadata signal.
         if is_data_goal:
             if any(k in searchable for k in ["digital computing", "data", "statistics", "python", "machine learning"]):
                 prior += 1.0
@@ -178,6 +197,10 @@ class HybridRecommender:
         goal_vec = self._vectorizer.transform([goal_text])
         sims = cosine_similarity(goal_vec, self._item_matrix)[0]
         return sims.astype(np.float32)
+
+# _tfidf_scores: compute cosine similarities between the goal and all
+# items using the stored TF-IDF item matrix. Returned values are not
+# normalised (min-max is applied later on the candidate subset).
 
     def recommend(self, goal_text: str, top_k: int = 5) -> pd.DataFrame:
         if not goal_text or not str(goal_text).strip():
@@ -228,3 +251,10 @@ class HybridRecommender:
 
         cand = cand.sort_values("score", ascending=False).head(top_k).reset_index(drop=True)
         return cand
+
+# recommend: overall flow
+# 1. compute embedding similarities for all items and pick top-N candidates
+# 2. compute TF-IDF similarities and simple metadata prior for those candidates
+# 3. normalise embedding/tfidf signals to [0,1], combine with weights from cfg
+# 4. add a small level-based additive adjustment for beginner intent
+# 5. expose `confidence` (top embedding score) to help client decide fallback UX
