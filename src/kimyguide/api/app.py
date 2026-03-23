@@ -238,21 +238,12 @@ except Exception as e:
 
 @app.get("/", response_class=HTMLResponse)
 def landing_page(request: Request):
-    """
-    Landing page route.
-
-    Renders the site's home template. The `request` object is required by
-    Jinja2Templates so URL building and request-aware helpers work inside
-    the template. We also pass the current model version so the UI can
-    display it (useful for debugging / user info).
-    """
-    # templates.TemplateResponse(template_name, context) returns an HTMLResponse
-    # where `request` must be included in the context for Jinja2Templates.
+    """Landing page: render home template and expose model version."""
     return templates.TemplateResponse(
         "home.html",
         {
-            "request": request,           # required by Jinja template runtime
-            "model_version": MODEL_VERSION,  # expose model/version info to UI
+            "request": request,  # required by Jinja2Templates
+            "model_version": MODEL_VERSION,  # show version in UI
         },
     )
 
