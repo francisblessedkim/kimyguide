@@ -1,4 +1,3 @@
-```markdown
 # KimyGuide 
 
 KimyGuide is a goal-based educational recommender system designed to generate meaningful course recommendations under **cold-start conditions**, where no prior user data is available.
