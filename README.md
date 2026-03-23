@@ -1,118 +1,182 @@
-# kimyguide
+```markdown
+# KimyGuide 🎓
 
-Small prototype for a goal-based course recommender (TF-IDF + optional
-embeddings hybrid). This README explains how to install, run, and test
-the project on macOS (or Linux) and Windows.
+KimyGuide is a goal-based educational recommender system designed to generate meaningful course recommendations under **cold-start conditions**, where no prior user data is available.
 
-Contents
-- `src/kimyguide`: Python package (API, models, explainers, features)
-- `scripts/generate_mooclike_dataset.py`: helper to create a small CSV dataset
-- `run_cli.py`: simple CLI demo to query the recommender
+The system combines:
+- **TF-IDF (lexical model)** → traditional keyword-based approach  
+- **Sentence-BERT embeddings (semantic model)** → semantic understanding  
+- **Hybrid model** → combines both for improved ranking performance  
 
-Prerequisites
-- Python 3.9+ (the repository was developed on Python 3.10+; tests run in a
-  virtualenv). On macOS you can use the system Python or pyenv. On Windows
-  use the official Python installer from python.org.
+---
 
-Quick setup (macOS / Linux)
+## 🚀 Features
 
-1. Open a terminal and cd into the project root (where this README sits).
+- Goal-based recommendations (e.g. "I want to learn Spanish")
+- Model comparison interface (TF-IDF vs Embeddings vs Hybrid)
+- FastAPI backend with interactive UI
+- Cold-start focused (no user history required)
 
-2. Create and activate a virtual environment:
+---
+
+## 📂 Project Structure
+
+```
+
+.
+├── src/
+│   └── kimyguide/
+│       ├── api/              # FastAPI app
+│       ├── models/           # TF-IDF, embeddings, hybrid logic
+│       ├── features/         # Text processing
+│       ├── explainers/       # Explanation logic
+│
+├── data/
+│   └── raw/                  # OpenLearn dataset
+│
+├── scripts/                  # Dataset scripts (scraping / prep)
+├── run_cli.py
+├── requirements.txt
+└── README.md
+
+````
+
+---
+
+## ⚙️ Prerequisites
+
+- Python 3.9+
+- pip
+
+---
+
+## 🧰 Setup (macOS / Linux)
 
 ```bash
-# create venv
+git clone https://github.com/your-username/kimyguide.git
+cd kimyguide
+
 python -m venv .venv
-
-# activate (macOS / Linux - zsh/bash)
 source .venv/bin/activate
-```
 
-3. Upgrade pip and install requirements:
-
-```bash
-python -m pip install --upgrade pip setuptools wheel
+pip install --upgrade pip setuptools wheel
 pip install -r requirements.txt
-```
+````
 
-Quick setup (Windows - PowerShell)
+---
+
+## 🧰 Setup (Windows - PowerShell)
 
 ```powershell
-# create venv
-python -m venv .venv
+git clone https://github.com/your-username/kimyguide.git
+cd kimyguide
 
-# activate (PowerShell)
+python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 
-# upgrade pip and install
 python -m pip install --upgrade pip setuptools wheel
 pip install -r requirements.txt
 ```
 
-Environment variables
-- `KIMYGUIDE_DATA_PATH` — optional path to a CSV dataset (the loader expects
-  specific columns; see `scripts/generate_mooclike_dataset.py` for structure).
-- `KIMYGUIDE_SKIP_EMBEDDINGS` — set to `1` to skip loading heavy embedding
-  models (useful for tests or when you don't have sentence-transformers
-  installed).
+---
 
-Example (run with generated sample data):
+## 📊 Dataset Setup
 
-```bash
-# generate a tiny dataset used by demos and tests
-python scripts/generate_mooclike_dataset.py --out data/raw/courses_mooclike.csv
+Place your dataset here:
 
-# run the CLI demo
-python run_cli.py --data-path data/raw/courses_mooclike.csv
+```
+data/raw/openlearn_courses.csv
 ```
 
-Run the web API (development)
-
-The FastAPI app is available as `kimyguide.api.app:app` and can be started
-with `uvicorn`. For a development run with auto-reload:
+If you have a scraping script:
 
 ```bash
-# make sure PYTHONPATH includes src so imports resolve
+python scripts/scrape_openlearn.py
+```
+
+---
+
+## ▶️ Run the Application
+
+⚠️ IMPORTANT: Your project uses a `src/` structure, so you must include `PYTHONPATH=src`
+
+```bash
 PYTHONPATH=src uvicorn kimyguide.api.app:app --reload --host 127.0.0.1 --port 8000
 ```
 
-Once the server starts you can view the running application in your browser:
+---
 
-- Landing UI: http://127.0.0.1:8000/ (Jinja2-backed home page)
-- Alternative UI routes: http://127.0.0.1:8000/ui and http://127.0.0.1:8000/ui/compare
-- API (OpenAPI) docs: http://127.0.0.1:8000/docs
+## 🌐 Access the App
 
-Open whichever URL matches your workflow — the landing page shows the
-simple web UI, while `/docs` exposes the interactive API explorer.
+* Main UI: [http://127.0.0.1:8000/](http://127.0.0.1:8000/)
+* Compare Models: [http://127.0.0.1:8000/ui/compare](http://127.0.0.1:8000/ui/compare)
+* API Docs: [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
 
-Running tests
+---
 
-Before running tests make sure the venv is active and dependencies are
-installed. The test suite expects environment variables to be set before the
-application is imported; the included tests set those themselves, but if you
-want to run a particular test interactively you can set:
+## 💡 Example Usage
 
-```bash
-# skip embeddings for fast test runs
-export KIMYGUIDE_SKIP_EMBEDDINGS=1
+Input:
 
-# run the whole test suite
-pytest -q
-
-# run a single test file
-pytest -q tests/test_hybrid_recommender_unit.py -q
+```
+I want to learn Spanish
 ```
 
-Notes & troubleshooting
-- If imports fail when running `uvicorn`, ensure you used `PYTHONPATH=src` or
-  run from a context where `src` is on sys.path (for example `pip install -e .`).
-- If you get memory or model-download errors, set `KIMYGUIDE_SKIP_EMBEDDINGS=1`
-  to avoid loading embedding models.
-- For Windows PowerShell the `Activate.ps1` script may be blocked by execution
-  policy; you can enable it temporarily with `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass`.
+The system returns:
 
-Contributing and contact
-- This repo is a small prototype — contributions and issue reports are
-  welcome. Please open an issue or pull request with proposed changes.
+* TF-IDF results (keyword-based)
+* Embedding results (semantic)
+* Hybrid results (combined)
 
-License: MIT
+---
+
+## 🧪 Run CLI Demo
+
+```bash
+python run_cli.py --data-path data/raw/openlearn_courses.csv
+```
+
+---
+
+## 🧪 Running Tests
+
+```bash
+export KIMYGUIDE_SKIP_EMBEDDINGS=1
+pytest -q
+```
+
+---
+
+## ⚠️ Troubleshooting
+
+### Imports not working?
+
+Make sure you are using:
+
+```bash
+PYTHONPATH=src
+```
+
+---
+
+### Embeddings too slow?
+
+Disable them:
+
+```bash
+export KIMYGUIDE_SKIP_EMBEDDINGS=1
+```
+
+---
+
+## 📌 Notes
+
+* Designed for **cold-start recommendation**
+* No user history required
+* Uses only user request + course data
+
+---
+
+## 📄 License
+
+MIT License
