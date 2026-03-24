@@ -1,5 +1,3 @@
-import os
-import importlib
 import pandas as pd
 from fastapi.testclient import TestClient
 
@@ -59,7 +57,7 @@ def _load_test_app(tmp_path, monkeypatch):
     import sys
     import importlib
 
-    # Ensure a clean import so env vars are respected (no cached module state)
+    # Ensure a clean import so env vars are respected
     if "kimyguide.api.app" in sys.modules:
         del sys.modules["kimyguide.api.app"]
 
@@ -69,32 +67,29 @@ def _load_test_app(tmp_path, monkeypatch):
 
 
 def test_root_and_health(tmp_path, monkeypatch):
-    """Smoke test for the app root and /health endpoint.
-
-    Uses a small in-memory CSV dataset (written by _load_test_app) and a TestClient
-    to exercise the API without network calls.
-    """
-    # Load the application module with test environment variables set
+    """Smoke test for the landing page, /api/info, and /health endpoint."""
     app_module = _load_test_app(tmp_path, monkeypatch)
-
-    # Create a TestClient for making requests against the FastAPI app
     client = TestClient(app_module.app)
 
-    # Request the root path and verify it returns expected metadata links
+    # Root now serves the landing HTML page
     r = client.get("/")
     assert r.status_code == 200
+    assert "text/html" in r.headers["content-type"]
+
+    # API info endpoint returns the metadata previously expected at "/"
+    r = client.get("/api/info")
+    assert r.status_code == 200
     body = r.json()
-    # Root should include links to docs, health endpoint, and a model version string
-    assert "docs" in body
-    assert "health" in body
+    assert body["name"] == "KimyGuide API"
+    assert body["docs"] == "/docs"
+    assert body["health"] == "/health"
+    assert body["ui"] == "/ui"
     assert "model_version" in body
 
-    # Request the /health endpoint and validate reported status and dataset info
+    # /health endpoint should report service status and dataset info
     r = client.get("/health")
     assert r.status_code == 200
     h = r.json()
-    # Health endpoint should report that the service is OK and that the dataset loaded
     assert h["status"] == "ok"
     assert h["dataset_loaded"] is True
-    # Our tiny test dataset contains 3 courses, so the number should match
     assert h["num_courses"] == 3
